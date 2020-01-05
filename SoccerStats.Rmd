@@ -1,0 +1,149 @@
+---
+title: "SoccerStats"
+author: "Benoît Blanc"
+date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output:
+  html_document:
+    includes:
+      in_header: header.html
+    theme: cerulean #“default”, “cerulean”, “journal”, “flatly”, “darkly”, “readable”, “spacelab”, “united”, “cosmo”, “lumen”, “paper”, “sandstone”, “simplex”, “yeti”
+    highlight: zenburn #“default”, “tango”, “pygments”, “kate”, “monochrome”, “espresso”, “zenburn”, “haddock”, “breezedark”
+    df_print: paged
+    number_sections: TRUE
+    code_folding: "show"
+    toc: TRUE
+    toc_depth: 2
+    toc_float: TRUE
+  prettydoc::html_pretty:
+    includes:
+      in_header: header.html
+    highlight: github # github vignette
+    theme: architect # cayman tactile architect leonids hpstr
+  pdf_document:
+    highlight: zenburn #“default”, “tango”, “pygments”, “kate”, “monochrome”, “espresso”, “zenburn”, “haddock”, “breezedark”
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+  rmdformats::readthedown:
+    includes:
+      in_header: header.html
+    code_folding: hide
+    self_contained: true
+    thumbnails: false
+    lightbox: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(prettydoc)
+library(rmdformats)
+library(tidyverse)
+library(devtools)
+library(ggplot2)
+devtools::install_github("statsbomb/StatsBombR")
+```
+
+# Get Free Data from StatsBomb
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(StatsBombR)
+
+competitions <- FreeCompetitions()
+competitions
+
+liga2018_2019 <- filter(competitions, competitions$competition_id == 11 & competitions$season_name == "2018/2019")
+matches <- FreeMatches(Competitions = liga2018_2019)
+matches
+
+real_barca <- filter(matches, matches$match_id == 16196)
+real_barca_data <- StatsBombFreeEvents(MatchesDF = real_barca)
+real_barca_data <- allclean(real_barca_data)
+
+head(real_barca_data, 10)
+```
+# Shots and Goals
+
+```{r Goals_Shots, echo=TRUE}
+shots_goals <- real_barca_data %>% group_by(team.name) %>% summarise(shots = sum(type.name == "Shot", na.rm = TRUE), 
+                                                                     goals = sum(shot.outcome.name=="Goal", na.rm = TRUE))
+shots_goals
+```
+
+## Data to Chart
+
+```{r DataToChart, echo=TRUE}
+ggplot(data = shots_goals, aes(x = reorder(team.name, shots), y = shots)) + geom_bar(stat = "identity", width = 0.5) +
+  labs(y="Shots") +
+  theme(axis.title.y = element_blank()) +
+  scale_y_continuous( expand = c(0,0)) + coord_flip() #+
+  #theme_SB() 
+```
+
+## Players shots per 90
+
+```{r PlayersShotsPer90, echo=TRUE}
+player_shots = real_barca_data %>%
+  group_by(player.name, player.id) %>%
+  summarise(shots = sum(type.name=="Shot", na.rm = TRUE))
+player_minutes = get.minutesplayed(real_barca_data)
+player_minutes = player_minutes %>% group_by(player.id) %>% summarise(minutes = sum(MinutesPlayed))
+player_shots = left_join(player_shots, player_minutes)
+player_shots = player_shots %>% mutate(nineties = minutes/90)
+player_shots = player_shots %>% mutate(shots_per90 = shots/nineties)
+player_shots
+```
+
+# Pitch visualization
+
+```{r Pitch, echo=TRUE, message=FALSE, warning=FALSE}
+devtools::install_github("FCrSTATS/SBpitch")
+library(SBpitch)
+create_Pitch()
+```
+
+# Plotting Shots and Goals
+
+## Plotting Shots
+
+```{r PlottingShots, echo=TRUE}
+shots <- real_barca_data %>% filter(type.name=="Shot")
+create_Pitch() +
+  geom_segment(data = shots, aes(x = location.x, y = location.y, xend = shot.end_location.x, yend = shot.end_location.y, 
+                                 colour = team.name, legend.title = "Team"), lineend = "round", size = 0.6, 
+               arrow = arrow(length = unit(0.08, "inches"))) +
+  labs(title = "Shots Real Madrid - FC Barcelone", subtitle = "La Liga, 2018/2019", colour = "Team") + scale_y_reverse() +
+  coord_fixed(ratio = 105/100)
+```
+
+## Plotting xG
+
+```{r PlottingxG, echo=TRUE}
+create_Pitch() +
+  geom_point(data = shots, aes(shape = shot.outcome.name, x = location.x, y = location.y, colour = team.name, 
+                               size = shot.statsbomb_xg)) +
+  labs(title = "Shots Real Madrid - FC Barcelone", subtitle = "La Liga, 2018/2019", colour = "Team", size = "xG", 
+       shape = "Shot type") + 
+  scale_y_reverse() +
+  coord_fixed(ratio = 105/100)
+```
+
+## Plotting Goals
+
+```{r PlottingGoals, echo=TRUE}
+goals <- real_barca_data %>% filter(type.name=="Shot" & shot.outcome.name == "Goal")
+create_Pitch() +
+  geom_point(data = goals, aes(shape = shot.outcome.name, x = location.x, y = location.y, colour = team.name, 
+                               size = shot.statsbomb_xg)) +  
+  geom_segment(data = goals, aes(x = location.x, y = location.y, xend = shot.end_location.x, yend = shot.end_location.y, 
+                                 colour = team.name, legend.title = "Team"), lineend = "round", size = 1, 
+               arrow = arrow(length = unit(0.08, "inches"))) +
+  labs(title = "Goals Real Madrid - FC Barcelone", subtitle = "La Liga, 2018/2019", colour = "Team", size = "xG", 
+       shape = "Shot type") + scale_y_reverse() +
+  coord_fixed(ratio = 105/100)
+```
