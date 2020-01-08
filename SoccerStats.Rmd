@@ -147,3 +147,84 @@ create_Pitch() +
        shape = "Shot type") + scale_y_reverse() +
   coord_fixed(ratio = 105/100)
 ```
+
+# Pass
+
+```{r Pass, echo=TRUE}
+pass <- real_barca_data %>% group_by(team.name) %>% summarise(pass = sum(type.name == "Pass", na.rm = TRUE))
+pass
+```
+
+## Plotting Pass
+
+```{r PlottingPass, echo=TRUE}
+player_passes <- real_barca_data %>% filter(type.name=="Pass" &is.na(pass.outcome.name) & player.name=="Toni Kroos")
+create_Pitch() +
+  geom_point(data = player_passes, aes(x = location.x, y = location.y, colour = player.name)) +  
+  #geom_segment(data = pass, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, 
+  #                               colour = player.name, legend.title = "Team"), lineend = "round", size = 1, 
+  #             arrow = arrow(length = unit(0.08, "inches"))) +
+  labs(title = "Pass Map Real Madrid - FC Barcelone, La Liga, 2018/2019", subtitle = paste0(player_passes$team.name, ", ", player_passes$player.name, ", ", nrow(player_passes), " passes"), colour = "Player") + scale_y_reverse() +
+  coord_fixed(ratio = 105/100)
+```
+
+# Clustering
+
+```{r Clustering, echo=TRUE}
+library(sp)
+library(rgdal)
+library(dbscan)
+passSF <- sf::st_as_sf(player_passes, coords = c("location.x", "location.y"))
+passSp <- sf:::as_Spatial(passSF) #on transforme pass en SpatialPOintDataFrame
+plot(passSp)
+clust<-dbscan::dbscan(passSp@coords, eps=12,minPts=3)  #cluster
+clust   #synthèse résultat
+#carto des classes option1
+plot(passSp,col=clust$cluster,pch=20)
+
+
+```
+
+```{r Clustering_Plot, echo=TRUE}
+pass_map <- bind_cols(player_passes, as.data.frame(clust$cluster))
+pass_map <- rename(pass_map, cluster = "clust$cluster") %>% mutate(cluster = as.character(cluster))
+nb_passes <- group_by(pass_map, cluster) %>% summarise(nb_passes = n())
+centroids <- aggregate(cbind(location.x, location.y)~cluster,pass_map,mean)
+
+centroids <- left_join(centroids, nb_passes, by = "cluster")
+
+create_Pitch() +
+  geom_point(data = pass_map, aes(x = location.x, y = location.y, colour = cluster)) +
+  geom_point(data = centroids, aes(x = location.x, y = location.y, colour = cluster, shape = 17, size = nb_passes)) +
+  #geom_segment(data = pass, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, 
+  #                               colour = player.name, legend.title = "Team"), lineend = "round", size = 1, 
+  #             arrow = arrow(length = unit(0.08, "inches"))) +
+  labs(title = "Pass Map Origins Real Madrid - FC Barcelone, La Liga, 2018/2019", subtitle = paste0(pass_map$team.name, ", ", pass_map$player.name, ", ", nrow(pass_map), " passes"), colour = "Cluster") + scale_y_reverse() + scale_color_brewer(palette = "Set1") + scale_shape_identity() + guides(size = FALSE) +
+  coord_fixed(ratio = 105/100)
+```
+
+```{r Clustering_Match, echo=TRUE}
+pass_endSF <- sf::st_as_sf(player_passes, coords = c("pass.end_location.x", "pass.end_location.y"))
+pass_endSp <- sf:::as_Spatial(pass_endSF) #on transforme pass en SpatialPOintDataFrame
+plot(pass_endSp)
+clust<-dbscan::dbscan(pass_endSp@coords, eps=12,minPts=3)  #cluster
+clust   #synthèse résultat
+#carto des classes option1
+plot(pass_endSp,col=clust$cluster,pch=20)
+
+pass_end_map <- bind_cols(player_passes, as.data.frame(clust$cluster))
+pass_end_map <- rename(pass_end_map, cluster = "clust$cluster") %>% mutate(cluster = as.character(cluster))
+nb_passes <- group_by(pass_end_map, cluster) %>% summarise(nb_passes = n())
+
+centroids_end <- aggregate(cbind(pass.end_location.x, pass.end_location.y)~cluster,pass_end_map,mean)
+centroids_end <- left_join(centroids_end, nb_passes, by = "cluster")
+
+create_Pitch() +
+  geom_point(data = pass_end_map, aes(x = pass.end_location.x, y = pass.end_location.y, colour = cluster)) +
+  geom_point(data = centroids_end, aes(x = pass.end_location.x, y = pass.end_location.y, colour = cluster, shape = 17, size = nb_passes)) +
+  #geom_segment(data = pass, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, 
+  #                               colour = player.name, legend.title = "Team"), lineend = "round", size = 1, 
+  #             arrow = arrow(length = unit(0.08, "inches"))) +
+  labs(title = "Pass Map Detinations Real Madrid - FC Barcelone, La Liga, 2018/2019", subtitle = paste0(pass_end_map$team.name, ", ", pass_end_map$player.name, ", ", nrow(pass_end_map), " passes"), colour = "Cluster") + scale_y_reverse() + scale_color_brewer(palette = "Set1") + scale_shape_identity() + guides(size = FALSE) +
+  coord_fixed(ratio = 105/100)
+```
